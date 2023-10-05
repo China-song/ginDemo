@@ -1,13 +1,11 @@
 package controller
 
 import (
-	"errors"
-	"github.com/China-song/ginEssential/common"
 	"github.com/China-song/ginEssential/model"
+	"github.com/China-song/ginEssential/repository"
 	"github.com/China-song/ginEssential/response"
+	"github.com/China-song/ginEssential/vo"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
-	"log"
 	"strconv"
 )
 
@@ -16,37 +14,34 @@ type ICategoryController interface {
 }
 
 type CategoryController struct {
-	DB *gorm.DB
+	Repository repository.ICategoryRepository
 }
 
 func NewCategoryController() ICategoryController {
-	db := common.GetDB()
-	db.AutoMigrate(model.Category{})
-	return CategoryController{DB: db}
+	categoryController := CategoryController{Repository: repository.NewCategoryRepository()}
+	categoryController.Repository.(repository.CategoryRepository).DB.AutoMigrate(model.Category{})
+	return categoryController
 }
 
 func (c CategoryController) Create(ctx *gin.Context) {
-	var requestCategory model.Category
-	ctx.Bind(&requestCategory)
-
-	if requestCategory.Name == "" {
-		log.Printf("requestCategory.Name: %s", requestCategory.Name)
+	var requestCategory vo.CreateCategoryRequest
+	if err := ctx.ShouldBind(&requestCategory); err != nil {
 		response.Fail(ctx, nil, "数据验证错误，分类名称必填")
 		return
 	}
 
-	c.DB.Create(&requestCategory)
+	category, err := c.Repository.Create(requestCategory.Name)
+	if err != nil {
+		panic(err)
+	}
 
-	response.Success(ctx, gin.H{"category": requestCategory}, "创建成功")
+	response.Success(ctx, gin.H{"category": category}, "创建成功")
 }
 
 func (c CategoryController) Update(ctx *gin.Context) {
 	// 获取body参数
-	var requestCategory model.Category
-	ctx.Bind(&requestCategory)
-
-	if requestCategory.Name == "" {
-		log.Printf("requestCategory.Name: %s", requestCategory.Name)
+	var requestCategory vo.CreateCategoryRequest
+	if err := ctx.ShouldBind(&requestCategory); err != nil {
 		response.Fail(ctx, nil, "数据验证错误，分类名称必填")
 		return
 	}
@@ -54,14 +49,18 @@ func (c CategoryController) Update(ctx *gin.Context) {
 	// 获取path参数
 	categoryID, _ := strconv.Atoi(ctx.Params.ByName("id"))
 
-	var updateCategory model.Category
-	if errors.Is(c.DB.First(&updateCategory, categoryID).Error, gorm.ErrRecordNotFound) {
+	category, err := c.Repository.SelectById(categoryID)
+	if err != nil {
 		response.Fail(ctx, nil, "分类不存在")
 		return
 	}
 
 	// 更新分类名称
-	c.DB.Model(&updateCategory).Update("name", requestCategory.Name)
+	updateCategory, err := c.Repository.Update(*category, requestCategory.Name)
+	if err != nil {
+		response.Fail(ctx, nil, "更新数据出错")
+		return
+	}
 	response.Success(ctx, gin.H{"category": updateCategory}, "修改成功")
 }
 
@@ -69,8 +68,8 @@ func (c CategoryController) Show(ctx *gin.Context) {
 	// 获取path参数
 	categoryID, _ := strconv.Atoi(ctx.Params.ByName("id"))
 
-	var showCategory model.Category
-	if errors.Is(c.DB.First(&showCategory, categoryID).Error, gorm.ErrRecordNotFound) {
+	showCategory, err := c.Repository.SelectById(categoryID)
+	if err != nil {
 		response.Fail(ctx, nil, "分类不存在")
 		return
 	}
@@ -83,12 +82,15 @@ func (c CategoryController) Delete(ctx *gin.Context) {
 	// 获取path参数
 	categoryID, _ := strconv.Atoi(ctx.Params.ByName("id"))
 
-	var deleteCategory model.Category
-	if errors.Is(c.DB.First(&deleteCategory, categoryID).Error, gorm.ErrRecordNotFound) {
+	_, err := c.Repository.SelectById(categoryID)
+	if err != nil {
 		response.Fail(ctx, nil, "分类不存在")
 		return
 	}
 
-	c.DB.Delete(&deleteCategory)
-	response.Success(ctx, gin.H{"category": deleteCategory}, "删除成功")
+	if err := c.Repository.DeleteById(categoryID); err != nil {
+		response.Fail(ctx, gin.H{"error": err.Error()}, "删除数据出错")
+		return
+	}
+	response.Success(ctx, nil, "删除成功")
 }
