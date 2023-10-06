@@ -2,6 +2,7 @@ package model
 
 import (
 	uuid "github.com/satori/go.uuid"
+	"gorm.io/gorm"
 	"time"
 )
 
@@ -15,4 +16,9 @@ type Post struct {
 	Content    string `json:"content" gorm:"type:text;not null"`
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+}
+
+func (post *Post) BeforeCreate(tx *gorm.DB) error {
+	post.ID = uuid.NewV4()
+	return nil
 }
